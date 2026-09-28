@@ -16,6 +16,19 @@ export const authenticate: RequestHandler = (req, _res, next) => {
   next();
 };
 
+/** Attaches `req.user` when a valid token is present, but never rejects the request. */
+export const optionalAuth: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      req.user = verifyAccessToken(header.slice('Bearer '.length));
+    } catch {
+      // Ignore invalid tokens on public routes.
+    }
+  }
+  next();
+};
+
 export const authorize =
   (...roles: Role[]): RequestHandler =>
   (req, _res, next) => {
