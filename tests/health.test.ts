@@ -7,7 +7,7 @@ describe('GET /health', () => {
     const res = await request(createApp()).get('/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
-    expect(res.body.services.redis).toBe('disabled');
+    expect(res.body.services.redis).toBe(process.env.REDIS_ENABLED === 'true' ? 'up' : 'disabled');
   });
 
   it('returns a JSON 404 for unknown routes', async () => {

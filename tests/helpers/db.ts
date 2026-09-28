@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import type { Role } from '@prisma/client';
 import { prisma } from '../../src/lib/prisma.js';
+import { getCache } from '../../src/lib/cache.js';
+import { EVENTS_CACHE_NS } from '../../src/modules/events/events.service.js';
 import { signAccessToken } from '../../src/lib/tokens.js';
 
 export async function resetDb() {
+  // Cached listings must not leak between tests (works for both cache backends).
+  await getCache().invalidate(EVENTS_CACHE_NS);
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "tickets", "booking_items", "bookings", "ticket_tiers", "events", "refresh_tokens", "users" CASCADE',
   );
