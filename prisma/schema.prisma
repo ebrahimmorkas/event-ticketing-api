@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ORGANIZER
+  ADMIN
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String
+  passwordHash  String
+  role          Role           @default(CUSTOMER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  events        Event[]
+  bookings      Booking[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Event {
+  id          String       @id @default(uuid())
+  organizerId String
+  organizer   User         @relation(fields: [organizerId], references: [id])
+  title       String
+  description String       @default("")
+  venue       String
+  city        String
+  startsAt    DateTime
+  endsAt      DateTime
+  status      EventStatus  @default(DRAFT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tiers       TicketTier[]
+  bookings    Booking[]
+
+  @@index([status, startsAt])
+  @@index([city])
+  @@index([organizerId])
+  @@map("events")
+}
+
+/// `reserved` counts seats held by PENDING and CONFIRMED bookings; `sold` counts CONFIRMED only.
+/// A CHECK constraint (see migration) guarantees reserved never exceeds capacity.
+model TicketTier {
+  id         String        @id @default(uuid())
+  eventId    String
+  event      Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name       String
+  priceCents Int
+  capacity   Int
+  reserved   Int           @default(0)
+  sold       Int           @default(0)
+  createdAt  DateTime      @default(now())
+  items      BookingItem[]
+  tickets    Ticket[]
+
+  @@unique([eventId, name])
+  @@map("ticket_tiers")
+}
+
+model Booking {
+  id             String        @id @default(uuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  eventId        String
+  event          Event         @relation(fields: [eventId], references: [id])
+  status         BookingStatus @default(PENDING)
+  totalCents     Int
+  expiresAt      DateTime
+  idempotencyKey String?
+  paymentRef     String?
+  confirmedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  items          BookingItem[]
+  tickets        Ticket[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([status, expiresAt])
+  @@index([eventId])
+  @@map("bookings")
+}
+
+model BookingItem {
+  id             String     @id @default(uuid())
+  bookingId      String
+  booking        Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tierId         String
+  tier           TicketTier @relation(fields: [tierId], references: [id])
+  quantity       Int
+  unitPriceCents Int
+
+  @@index([bookingId])
+  @@map("booking_items")
+}
+
+model Ticket {
+  id          String     @id @default(uuid())
+  bookingId   String
+  booking     Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tierId      String
+  tier        TicketTier @relation(fields: [tierId], references: [id])
+  code        String     @unique
+  checkedInAt DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([bookingId])
+  @@map("tickets")
+}
