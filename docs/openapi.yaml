@@ -1,0 +1,563 @@
+openapi: 3.1.0
+info:
+  title: Event Ticketing API
+  version: 1.0.0
+  description: |
+    Event ticketing and booking backend.
+
+    **Auth:** obtain an access token from `/auth/login` and send it as `Authorization: Bearer <token>`.
+    Access tokens are short-lived; use `/auth/refresh` with the refresh token to rotate.
+
+    **Money** is always expressed in integer cents.
+servers:
+  - url: /api/v1
+tags:
+  - name: Auth
+  - name: Users
+  - name: Events
+  - name: Bookings
+  - name: Organizer
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: SOLD_OUT }
+            message: { type: string }
+            details: {}
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [CUSTOMER, ORGANIZER, ADMIN] }
+        createdAt: { type: string, format: date-time }
+    AuthResponse:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+    TierInput:
+      type: object
+      required: [name, priceCents, capacity]
+      properties:
+        name: { type: string, example: General }
+        priceCents: { type: integer, minimum: 0, example: 4999 }
+        capacity: { type: integer, minimum: 1, example: 300 }
+    Tier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceCents: { type: integer }
+        capacity: { type: integer }
+        available: { type: integer }
+    EventInput:
+      type: object
+      required: [title, venue, city, startsAt, endsAt]
+      properties:
+        title: { type: string, example: Node.js Conf 2026 }
+        description: { type: string }
+        venue: { type: string, example: Expo Centre }
+        city: { type: string, example: Mumbai }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        tiers:
+          type: array
+          items: { $ref: '#/components/schemas/TierInput' }
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organizerId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        venue: { type: string }
+        city: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { type: string, enum: [DRAFT, PUBLISHED, CANCELLED] }
+        tiers:
+          type: array
+          items: { $ref: '#/components/schemas/Tier' }
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, CONFIRMED, CANCELLED, EXPIRED] }
+        totalCents: { type: integer }
+        currency: { type: string, example: USD }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        event:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            venue: { type: string }
+            city: { type: string }
+            startsAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              tierId: { type: string }
+              tierName: { type: string }
+              quantity: { type: integer }
+              unitPriceCents: { type: integer }
+    Ticket:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string, example: TKT-9F2C4A1B7D3E5F60 }
+        tierName: { type: string }
+        checkedInAt: { type: [string, 'null'], format: date-time }
+        qrCode: { type: string, description: PNG data URL }
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a customer or organizer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                password:
+                  { type: string, minLength: 8, description: Must contain a letter and a number }
+                role: { type: string, enum: [CUSTOMER, ORGANIZER], default: CUSTOMER }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: customer@example.com }
+                password: { type: string, example: Password123! }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate a refresh token
+      description: Each refresh token is single-use. Replaying a used token revokes all sessions of that user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204': { description: Logged out }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List users (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: role
+          in: query
+          schema: { type: string, enum: [CUSTOMER, ORGANIZER, ADMIN] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403': { $ref: '#/components/responses/Error' }
+  /users/{id}/role:
+    patch:
+      tags: [Users]
+      summary: Change a user's role (admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [CUSTOMER, ORGANIZER, ADMIN] }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /events:
+    get:
+      tags: [Events]
+      summary: Search published upcoming events
+      description: Cached for up to 60 seconds. Use `GET /events/{id}` for live availability.
+      parameters:
+        - {
+            name: q,
+            in: query,
+            schema: { type: string },
+            description: Search title and description,
+          }
+        - { name: city, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [startsAt, -startsAt, createdAt, -createdAt] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [Events]
+      summary: Create an event (organizer)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '201': { description: Created }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /events/mine:
+    get:
+      tags: [Events]
+      summary: List my events, including drafts (organizer)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+  /events/{id}:
+    get:
+      tags: [Events]
+      summary: Get an event with live tier availability
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Events]
+      summary: Update an event (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /events/{id}/publish:
+    post:
+      tags: [Events]
+      summary: Publish a draft event (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/Error' }
+  /events/{id}/cancel:
+    post:
+      tags: [Events]
+      summary: Cancel an event and all its active bookings (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK }
+  /events/{id}/tiers:
+    post:
+      tags: [Events]
+      summary: Add a ticket tier (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TierInput' }
+      responses:
+        '201': { description: Created }
+        '409': { $ref: '#/components/responses/Error' }
+  /events/{id}/tiers/{tierId}:
+    patch:
+      tags: [Events]
+      summary: Update a ticket tier (owner)
+      description: Capacity cannot be reduced below the number of reserved tickets.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - { name: tierId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TierInput' }
+      responses:
+        '200': { description: OK }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /bookings:
+    post:
+      tags: [Bookings]
+      summary: Reserve tickets
+      description: |
+        Creates a PENDING booking that holds the tickets for `BOOKING_HOLD_MINUTES`.
+        Unpaid holds expire automatically and the tickets return to inventory.
+
+        Send an `Idempotency-Key` header to make retries safe: repeating the request
+        with the same key returns the original booking with status 200.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string, minLength: 8, maxLength: 100 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, items]
+              properties:
+                eventId: { type: string, format: uuid }
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      tierId: { type: string, format: uuid }
+                      quantity: { type: integer, minimum: 1, maximum: 10 }
+      responses:
+        '201':
+          description: Reserved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  booking: { $ref: '#/components/schemas/Booking' }
+        '200': { description: Idempotent replay of an earlier request }
+        '409':
+          description: Sold out (`SOLD_OUT`) or event already started (`EVENT_STARTED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      tags: [Bookings]
+      summary: List my bookings
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, CONFIRMED, CANCELLED, EXPIRED] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: OK }
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get a booking
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/Error' }
+  /bookings/{id}/pay:
+    post:
+      tags: [Bookings]
+      summary: Pay for a pending booking
+      description: 'Mock gateway: `pm_card_declined` and `pm_card_insufficient_funds` fail; any other value succeeds.'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paymentMethod: { type: string, example: pm_card_visa }
+      responses:
+        '200': { description: Confirmed }
+        '402': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /bookings/{id}/cancel:
+    post:
+      tags: [Bookings]
+      summary: Cancel a booking (refunds confirmed bookings)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: Cancelled }
+        '409': { $ref: '#/components/responses/Error' }
+  /bookings/{id}/tickets:
+    get:
+      tags: [Bookings]
+      summary: Get tickets with QR codes for a confirmed booking
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tickets:
+                    type: array
+                    items: { $ref: '#/components/schemas/Ticket' }
+
+  /organizer/check-in:
+    post:
+      tags: [Organizer]
+      summary: Check a ticket in at the venue
+      description: A ticket can be checked in exactly once, even with simultaneous scans.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string }
+      responses:
+        '200': { description: Checked in }
+        '409': { $ref: '#/components/responses/Error' }
+  /organizer/events/{id}/stats:
+    get:
+      tags: [Organizer]
+      summary: Sales and attendance statistics for an event
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: OK }
