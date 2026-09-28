@@ -16,7 +16,16 @@ export function createApp() {
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(',') }));
   app.use(express.json({ limit: '100kb' }));
-  app.use(pinoHttp({ logger, autoLogging: env.NODE_ENV !== 'test' }));
+  app.use(
+    pinoHttp({
+      logger,
+      autoLogging: env.NODE_ENV !== 'test',
+      serializers: {
+        req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode }),
+      },
+    }),
+  );
 
   app.use('/health', healthRouter);
   app.use('/api/v1', apiRouter);
