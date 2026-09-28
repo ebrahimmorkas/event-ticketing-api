@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { createDocsRouter } from './docs.js';
 import { createApiRouter } from './routes.js';
 
 export function createApp() {
@@ -29,6 +30,7 @@ export function createApp() {
 
   app.use('/health', healthRouter);
   app.use('/api/v1', createApiRouter());
+  app.use('/docs', createDocsRouter());
 
   app.use(notFoundHandler);
   app.use(errorHandler);
