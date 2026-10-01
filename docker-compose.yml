@@ -3,8 +3,18 @@
 #
 # With Redis (Redis cache + rate limits, BullMQ jobs):
 #   REDIS_ENABLED=true docker compose --profile redis up --build
+#
+# The web client is served at http://localhost:8080 and the API at http://localhost:3000.
 
 services:
+  web:
+    build: ./client
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+    restart: unless-stopped
+
   api:
     build: .
     ports:
