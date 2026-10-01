@@ -20,6 +20,22 @@ const BookingDetailPage = named(
   () => import('@/features/bookings/BookingDetailPage'),
   'BookingDetailPage',
 );
+const OrganizerDashboardPage = named(
+  () => import('@/features/organizer/OrganizerDashboardPage'),
+  'OrganizerDashboardPage',
+);
+const CreateEventPage = named(
+  () => import('@/features/organizer/CreateEventPage'),
+  'CreateEventPage',
+);
+const ManageEventPage = named(
+  () => import('@/features/organizer/ManageEventPage'),
+  'ManageEventPage',
+);
+const CheckInPage = named(() => import('@/features/organizer/CheckInPage'), 'CheckInPage');
+const UsersPage = named(() => import('@/features/admin/UsersPage'), 'UsersPage');
+
+const ORGANIZERS: Role[] = ['ORGANIZER', 'ADMIN'];
 
 const protect = (element: ReactNode, roles?: Role[]) => (
   <RequireAuth roles={roles}>
@@ -38,6 +54,11 @@ const router = createBrowserRouter([
       { path: 'events/:id', element: <EventDetailPage /> },
       { path: 'bookings', element: protect(<MyBookingsPage />) },
       { path: 'bookings/:id', element: protect(<BookingDetailPage />) },
+      { path: 'organizer', element: protect(<OrganizerDashboardPage />, ORGANIZERS) },
+      { path: 'organizer/events/new', element: protect(<CreateEventPage />, ORGANIZERS) },
+      { path: 'organizer/events/:id', element: protect(<ManageEventPage />, ORGANIZERS) },
+      { path: 'organizer/check-in', element: protect(<CheckInPage />, ORGANIZERS) },
+      { path: 'admin/users', element: protect(<UsersPage />, ['ADMIN']) },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
