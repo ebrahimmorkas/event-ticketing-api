@@ -147,3 +147,10 @@ jobs:
           tags: event-ticketing-api:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: client
+          push: false
+          tags: event-ticketing-client:ci
+          cache-from: type=gha,scope=client
+          cache-to: type=gha,mode=max,scope=client
